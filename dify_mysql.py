@@ -1,28 +1,28 @@
-#import mysql.connector
+import mysql.connector
 import requests
 import string
 import streamlit as st
 import subprocess
 import sys
 
-# Try installing mysql-connector-python at runtime
-try:
-    import mysql.connector
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "mysql-connector-python"])
+# # Try installing mysql-connector-python at runtime
+# try:
+#     import mysql.connector
+# except ImportError:
+#     subprocess.check_call([sys.executable, "-m", "pip", "install", "mysql-connector-python"])
 
-import mysql.connector
-import streamlit as st
+# import mysql.connector
+# import streamlit as st
 
-# Your Streamlit code follows
-st.write("MySQL connector should now be installed!")
+# # Your Streamlit code follows
+# st.write("MySQL connector should now be installed!")
 
-# Check installed packages
-def check_installed_packages():
-    result = subprocess.run(["pip", "freeze"], capture_output=True, text=True)
-    st.write("Installed packages:\n", result.stdout)
+# # Check installed packages
+# def check_installed_packages():
+#     result = subprocess.run(["pip", "freeze"], capture_output=True, text=True)
+#     st.write("Installed packages:\n", result.stdout)
 
-check_installed_packages()
+# check_installed_packages()
 
 
 # MySQL Database Setup
