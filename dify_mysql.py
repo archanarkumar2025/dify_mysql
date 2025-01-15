@@ -3,6 +3,16 @@ import requests
 import string
 import streamlit as st
 
+import subprocess
+
+# Check installed packages
+def check_installed_packages():
+    result = subprocess.run(["pip", "freeze"], capture_output=True, text=True)
+    st.write("Installed packages:\n", result.stdout)
+
+check_installed_packages()
+
+
 # MySQL Database Setup
 conn = mysql.connector.connect(
     host="localhost",  
