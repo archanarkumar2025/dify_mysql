@@ -1,0 +1,194 @@
+import mysql.connector
+import requests
+import string
+import streamlit as st
+
+# MySQL Database Setup
+conn = mysql.connector.connect(
+    host="your_mysql_host",  # Replace with your MySQL host (e.g., "localhost" or "127.0.0.1")
+    user="your_mysql_user",  # Replace with your MySQL username (e.g., "myapp_user")
+    password="your_mysql_password",  # Replace with your MySQL password
+    database="myapp_database"  # Replace with your MySQL database name
+)
+cursor = conn.cursor()
+
+# Create tables if they don't exist
+cursor.execute(''' 
+    CREATE TABLE IF NOT EXISTS messages (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        role VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL
+    )
+''')
+
+cursor.execute(''' 
+    CREATE TABLE IF NOT EXISTS items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        item_name VARCHAR(255) NOT NULL,
+        price FLOAT NOT NULL
+    )
+''')
+conn.commit()
+
+# Function to insert or update an item in the items table (case-insensitive)
+def insert_or_update_item(item_name, price):
+    item_name_lower = item_name.lower()  # Convert to lowercase for case-insensitive matching
+
+    cursor.execute(''' 
+        SELECT * FROM items WHERE item_name = %s 
+    ''', (item_name_lower,))
+    item = cursor.fetchone()
+
+    if item:  # If the item already exists, update its price
+        cursor.execute(''' 
+            UPDATE items SET price = %s WHERE item_name = %s 
+        ''', (price, item_name_lower))
+    else:  # If the item doesn't exist, insert a new one
+        cursor.execute(''' 
+            INSERT INTO items (item_name, price) 
+            VALUES (%s, %s)
+        ''', (item_name_lower, price))
+
+    conn.commit()
+
+# Manually set prices for items
+insert_or_update_item('laptop', 70000.00)
+insert_or_update_item('Iphone', 60000.00)
+insert_or_update_item('Dyson1', 80000.00)
+
+print("Prices updated successfully!")
+
+# Dify API Key and URL (for external API)
+dify_api_key = "app-9oLZBM1eYsA77L1tp3rVYZd9"
+url = "https://api.dify.ai/v1/chat-messages"
+
+st.title("Dify Streamlit Chatbot with Item Price Retrieval")
+
+# Initialize session state if conversation_id and messages are not yet set
+if "conversation_id" not in st.session_state:
+    st.session_state.conversation_id = ""  # Empty conversation_id to start fresh
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []  # Initialize an empty list to hold chat messages
+
+# Function to insert a message into the database
+def insert_message(role, content):
+    cursor.execute(''' 
+        INSERT INTO messages (role, content) 
+        VALUES (%s, %s)
+    ''', (role, content))
+    conn.commit()
+
+# Function to retrieve all messages from the database
+def get_messages():
+    cursor.execute('SELECT * FROM messages')
+    rows = cursor.fetchall()
+    return rows
+
+# Function to retrieve the price of an item from the database (case-insensitive)
+def get_item_price(item_name):
+    cursor.execute('SELECT price FROM items WHERE LOWER(item_name) = LOWER(%s)', (item_name,))
+    item = cursor.fetchone()
+    if item:
+        return item[0]  # Return the price
+    else:
+        return None  # Return None if the item is not found
+
+# Function to load the response from the assistant (chatbot)
+def load_response(prompt):
+    headers = {
+        'Authorization': f'Bearer {dify_api_key}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+
+    payload = {
+        "inputs": {},
+        "query": prompt,
+        "response_mode": "blocking",
+        "conversation_id": st.session_state.conversation_id,
+        "user": "aianytime",
+        "files": []
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+
+        response_data = response.json()
+
+        full_response = response_data.get('answer', 'No answer provided')
+
+        new_conversation_id = response_data.get('conversation_id', st.session_state.conversation_id)
+        st.session_state.conversation_id = new_conversation_id
+
+        return full_response
+
+    except requests.exceptions.RequestException as e:
+        if e.response:
+            st.error(f"HTTP Status Code: {e.response.status_code}")
+            st.error(f"Response Content: {e.response.text}")
+        else:
+            st.error(f"An error occurred: {e}")
+        return "An error occurred while fetching the response."
+
+# Function to handle item price query in the chat
+def handle_item_price_query(query):
+    # Look for item-related query with "price" and either "of" or "for"
+    if 'price' in query.lower() and ('of' in query.lower() or 'for' in query.lower()):
+        # Check for both "of" and "for" and split accordingly
+        if 'of' in query.lower():
+            item_name = query.split('of')[-1].strip()
+        elif 'for' in query.lower():
+            item_name = query.split('for')[-1].strip()
+
+        # Remove punctuation (like ? or ! at the end) from the item_name
+        item_name = item_name.translate(str.maketrans('', '', string.punctuation))
+
+        # Convert the item_name to lowercase for case-insensitive matching
+        item_name_lower = item_name.lower()
+
+        price = get_item_price(item_name_lower)
+        if price:
+            return f"The price of {item_name} is ${price:.2f}."
+        else:
+            return f"Sorry, I couldn't find the price for {item_name}."
+    else:
+        return None  # Not a price query, let the chatbot handle it
+
+# Display previous chat messages from the database
+messages = get_messages()
+for message in messages:
+    with st.chat_message(message[1]):
+        st.markdown(message[2])
+
+# Get user input (question)
+prompt = st.chat_input("Ask me anything, or ask for item prices!")
+
+if prompt:
+    # Display user input
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    insert_message('user', prompt)
+
+    # Check if the query is related to item price
+    item_price_response = handle_item_price_query(prompt)
+    if item_price_response:
+        # If it's an item price query, respond directly
+        with st.chat_message("assistant"):
+            st.markdown(item_price_response)
+        insert_message('assistant', item_price_response)
+    else:
+        # Handle as a normal chatbot query
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            message_placeholder.markdown("**Gimme a minute ...** ⏳")
+
+            full_response = load_response(prompt)
+
+            message_placeholder.markdown(full_response)
+
+            insert_message('assistant', full_response)
+
+    # Refresh session state messages to reflect new data
+    st.session_state.messages = get_messages()
